@@ -206,6 +206,7 @@ def transform(items: List[dict], link_lessons_to_assets: bool = True, base_url: 
     units: Dict[str, dict] = {}
     pages: Dict[str, dict] = {}
     lessons: Dict[str, dict] = {}
+    terms: Dict[str, dict] = {}
     known_ids: Set[str] = set()
     include_mask: Dict[str, bool] = {}
     type_cache: Dict[str, Tuple[Optional[int], Optional[int]]] = {}
@@ -244,6 +245,8 @@ def transform(items: List[dict], link_lessons_to_assets: bool = True, base_url: 
             units[name] = it
         elif ctype == CONTENT_TYPE_ID['Lesson']:
             lessons[name] = it
+        elif ctype == CONTENT_TYPE_ID['Term']:
+            terms[name] = it
         elif ctype == CONTENT_TYPE_ID['Page']:
             pages[name] = it
 
@@ -354,6 +357,48 @@ def transform(items: List[dict], link_lessons_to_assets: bool = True, base_url: 
                 ctc.append({'id': None,'parent_cms_id': pname,'child_cms_id': child,'child_content_label_id': label,'child_index': idx,'created_date': created,'deleted_date': ''})
                 if pname in lesson_to_pages:
                     lesson_to_pages[pname].append(child)
+
+    
+    # ---- Term.contentReference[] → (ImagePage → Term) edges ----
+    # Accept object OR array (also supports 'contentReferences'). Only link to existing ImagePages.
+    per_page_term_index: Dict[str, int] = {}
+    for term_id, term_it in terms.items():
+        tdata = (term_it.get('data') or {})
+        refs = tdata.get('contentReference') or tdata.get('contentReferences')
+        if not refs:
+            continue
+        # Normalize to list
+        if isinstance(refs, (dict, str)):
+            refs = [refs]
+        elif not isinstance(refs, list):
+            continue
+
+        for ref in refs:
+            if isinstance(ref, dict):
+                rpath = ref.get('path', '')
+            elif isinstance(ref, str):
+                rpath = ref
+            else:
+                rpath = ''
+            parent_page_id = _basename(rpath) if rpath else ''
+            # Only link if the parent exists and is an ImagePage
+            if not parent_page_id or parent_page_id not in pages:
+                continue
+            _, page_label = type_cache.get(parent_page_id, (None, None))
+            if page_label != LABEL_MAP.get('imagePage'):
+                continue
+            idx = per_page_term_index.get(parent_page_id, 0)
+            ctc.append({
+                'id': None,
+                'parent_cms_id': parent_page_id,
+                'child_cms_id': term_id,
+                'child_content_label_id': None,
+                'child_index': idx,
+                'created_date': created,
+                'deleted_date': ''
+            })
+            per_page_term_index[parent_page_id] = idx + 1
+
 
     # Helper: record asset with multi-role support
     def _record_asset(aid: str, url: str, role: Optional[int], parent_id: str,
