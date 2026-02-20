@@ -263,6 +263,20 @@ def transform(items: List[dict], link_lessons_to_assets: bool = True, base_url: 
             if k in data and data[k]:
                 ctt.append({'content_cms_id': name,'created_date': created,'deleted_date': '','id': None,'locale_id': 1,'text_index': 0,'text_type_id': tid,'text_value': str(data[k])})
 
+        # For Terms, also add their display "term" to CTT with text_type_id=16. Preferring data.term if present; otherwise fallback to the item's CMS name.
+        ctype, _clabel = type_cache.get(name, (None, None))
+        if ctype == CONTENT_TYPE_ID['Term']:
+            term_display = (data.get('term') if isinstance(data, dict) else None) or name
+            if term_display not in (None, ''):
+                ctt.append({
+                    'content_cms_id': name,
+                    'created_date': created,
+                    'deleted_date': '',
+                    'id': None,
+                    'locale_id': 1,
+                    'text_index': 0, 'text_type_id': TEXT_FIELDS.get('name'), 'text_value': str(term_display)
+                })
+                
     # Build map of AnswerID → answerText from CTT rows (answers processed above)
     answer_text_index: Dict[str, str] = {}
     for row in ctt:
